@@ -100,3 +100,5 @@ B|...
 ```bash
 ./bin/podcast-publish --file article.txt --slug 2026-03-26-episode-001 --title "案例 001：标题" --summary "这一期的简短介绍"
 ```
+
+支持可选参数：`--dry-run`、`--pages-base`、`--cover`。

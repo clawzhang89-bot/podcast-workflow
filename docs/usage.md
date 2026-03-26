@@ -96,3 +96,10 @@ security find-generic-password -s openclaw.volcengine.tts.apikey -a Evan -w
 3. 复制音频到 `../private-podcast/episodes/`
 4. 更新 `../private-podcast/feed.xml`
 5. git commit + push 到 GitHub Pages 仓库
+
+
+### 可选发布参数
+
+- `--dry-run`：只更新本地文件，不 push
+- `--pages-base`：自定义公开访问的 Pages 基础 URL
+- `--cover`：发布前把指定图片复制为 `site/cover.jpg`

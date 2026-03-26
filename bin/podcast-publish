@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
-import json
-import os
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -11,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAKE = ROOT / 'bin' / 'podcast-make'
 DEFAULT_FEED_REPO = ROOT.parent / 'private-podcast'
-PAGES_BASE = 'https://clawzhang89-bot.github.io/private-podcast'
+DEFAULT_PAGES_BASE = 'https://clawzhang89-bot.github.io/private-podcast'
 
 NS_ITUNES = 'http://www.itunes.com/dtds/podcast-1.0.dtd'
 NS_CONTENT = 'http://purl.org/rss/1.0/modules/content/'
@@ -45,7 +43,10 @@ def add_text(parent, tag, text, attrib=None):
 
 
 def probe_duration(mp3_path: Path) -> str:
-    out = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', str(mp3_path)], text=True).strip()
+    out = subprocess.check_output([
+        'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=nw=1:nk=1', str(mp3_path)
+    ], text=True).strip()
     seconds = int(round(float(out)))
     h = seconds // 3600
     m = (seconds % 3600) // 60
@@ -53,19 +54,39 @@ def probe_duration(mp3_path: Path) -> str:
     return f'{h:02d}:{m:02d}:{s:02d}' if h else f'{m:02d}:{s:02d}'
 
 
-def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_size: int, pub_date: str, duration: str):
+def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_size: int, pub_date: str, duration: str, pages_base: str):
     tree = ET.parse(feed_path)
     root = tree.getroot()
     channel = root.find('channel')
     if channel is None:
         raise SystemExit('Invalid feed.xml: missing channel')
 
+    atom_link = channel.find(f'{{{NS_ATOM}}}link')
+    if atom_link is not None:
+        atom_link.set('href', f'{pages_base}/feed.xml')
+
+    link = channel.find('link')
+    if link is not None:
+        link.text = f'{pages_base}/'
+
+    img = channel.find('image')
+    if img is not None:
+        url = img.find('url')
+        if url is not None:
+            url.text = f'{pages_base}/site/cover.jpg'
+        link2 = img.find('link')
+        if link2 is not None:
+            link2.text = f'{pages_base}/'
+
+    itunes_img = channel.find(f'{{{NS_ITUNES}}}image')
+    if itunes_img is not None:
+        itunes_img.set('href', f'{pages_base}/site/cover.jpg')
+
     lbd = channel.find('lastBuildDate')
     if lbd is None:
         lbd = ET.SubElement(channel, 'lastBuildDate')
     lbd.text = pub_date
 
-    # remove old item with same guid
     for item in list(channel.findall('item')):
         guid = item.find('guid')
         if guid is not None and guid.text == slug:
@@ -73,19 +94,19 @@ def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_siz
 
     item = ET.Element('item')
     add_text(item, 'title', title)
-    add_text(item, 'link', f'{PAGES_BASE}/episodes/{slug}.mp3')
+    add_text(item, 'link', f'{pages_base}/episodes/{slug}.mp3')
     add_text(item, 'description', summary)
     add_text(item, f'{{{NS_CONTENT}}}encoded', summary)
     add_text(item, f'{{{NS_ITUNES}}}author', 'Evan')
     add_text(item, f'{{{NS_ITUNES}}}summary', summary)
-    ET.SubElement(item, f'{{{NS_ITUNES}}}image', {'href': f'{PAGES_BASE}/site/cover.jpg'})
+    ET.SubElement(item, f'{{{NS_ITUNES}}}image', {'href': f'{pages_base}/site/cover.jpg'})
     add_text(item, f'{{{NS_ITUNES}}}duration', duration)
     add_text(item, f'{{{NS_ITUNES}}}episodeType', 'full')
     add_text(item, f'{{{NS_ITUNES}}}explicit', 'false')
     add_text(item, 'pubDate', pub_date)
     add_text(item, 'guid', slug, {'isPermaLink': 'false'})
     ET.SubElement(item, 'enclosure', {
-        'url': f'{PAGES_BASE}/episodes/{slug}.mp3',
+        'url': f'{pages_base}/episodes/{slug}.mp3',
         'length': str(mp3_size),
         'type': 'audio/mpeg',
     })
@@ -105,6 +126,9 @@ def main():
     ap.add_argument('--title', required=True, help='Episode title')
     ap.add_argument('--summary', required=True, help='Episode summary/description for RSS')
     ap.add_argument('--feed-repo', default=str(DEFAULT_FEED_REPO), help='Path to private-podcast repo')
+    ap.add_argument('--pages-base', default=DEFAULT_PAGES_BASE, help='Public GitHub Pages base URL without trailing slash')
+    ap.add_argument('--cover', help='Optional cover image to copy into site/cover.jpg before publishing')
+    ap.add_argument('--dry-run', action='store_true', help='Update files locally but do not git push')
     ap.add_argument('--dialogue-out', help='Optional dialogue text output path')
     ap.add_argument('--speaker-a', default='zh_female_mizai_uranus_bigtts')
     ap.add_argument('--speaker-b', default='zh_male_dayi_uranus_bigtts')
@@ -117,10 +141,17 @@ def main():
 
     slug = args.slug.strip()
     feed_repo = Path(args.feed_repo).resolve()
+    pages_base = args.pages_base.rstrip('/')
     episodes_dir = feed_repo / 'episodes'
     mp3_path = episodes_dir / f'{slug}.mp3'
     dialogue_out = Path(args.dialogue_out) if args.dialogue_out else ROOT / 'tmp' / f'{slug}.dialogue.txt'
     episodes_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.cover:
+        cover_src = Path(args.cover).resolve()
+        cover_dst = feed_repo / 'site' / 'cover.jpg'
+        cover_dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(cover_src, cover_dst)
 
     cmd = [
         str(MAKE), '-o', str(mp3_path), '--dialogue-out', str(dialogue_out),
@@ -136,18 +167,22 @@ def main():
     size = mp3_path.stat().st_size
     pub_date = dt.datetime.now(dt.UTC).strftime('%a, %d %b %Y %H:%M:%S GMT')
     duration = probe_duration(mp3_path)
-    update_feed(feed_repo / 'feed.xml', slug=slug, title=args.title, summary=args.summary, mp3_size=size, pub_date=pub_date, duration=duration)
+    update_feed(feed_repo / 'feed.xml', slug=slug, title=args.title, summary=args.summary, mp3_size=size, pub_date=pub_date, duration=duration, pages_base=pages_base)
 
     run(['git', 'add', 'feed.xml', str(mp3_path.relative_to(feed_repo))], cwd=feed_repo)
     if (feed_repo / 'site' / 'cover.jpg').exists():
         run(['git', 'add', 'site/cover.jpg'], cwd=feed_repo)
+
     diff = subprocess.run(['git', 'diff', '--cached', '--quiet'], cwd=feed_repo)
     if diff.returncode != 0:
         run(['git', 'commit', '-m', f'publish episode {slug}'], cwd=feed_repo)
-        run(['git', 'push'], cwd=feed_repo)
+        if not args.dry_run:
+            run(['git', 'push'], cwd=feed_repo)
 
-    print(f'{PAGES_BASE}/feed.xml')
-    print(f'{PAGES_BASE}/episodes/{slug}.mp3')
+    print(f'{pages_base}/feed.xml')
+    print(f'{pages_base}/episodes/{slug}.mp3')
+    if args.dry_run:
+        print('DRY_RUN=1')
 
 
 if __name__ == '__main__':
