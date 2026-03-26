@@ -72,3 +72,14 @@ B|...
 
 - `OPENAI_API_URL`
 - `OPENAI_MODEL` 或 `PODCAST_SCRIPT_MODEL`
+
+## 一键从纯文本生成双人播客
+
+```bash
+./bin/podcast-make --file article.txt -o episode.mp3
+```
+
+这条命令会顺序执行：
+
+1. `podcast-script`：纯文本 → 双人对话稿
+2. `doubao-dialogue`：双人对话稿 → 双人 mp3

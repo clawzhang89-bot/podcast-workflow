@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / 'bin' / 'podcast-script'
+DIALOGUE = ROOT / 'bin' / 'doubao-dialogue'
+
+
+def run(cmd):
+    subprocess.run(cmd, check=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Plain text to final two-speaker podcast mp3')
+    ap.add_argument('--file', help='Input text file')
+    ap.add_argument('--text', help='Direct text input')
+    ap.add_argument('-o', '--output', required=True, help='Output mp3 path')
+    ap.add_argument('--dialogue-out', help='Optional dialogue text output path')
+    ap.add_argument('--speaker-a', default='zh_female_mizai_uranus_bigtts')
+    ap.add_argument('--speaker-b', default='zh_male_dayi_uranus_bigtts')
+    ap.add_argument('--volume-a', type=int, default=100)
+    ap.add_argument('--volume-b', type=int, default=85)
+    args = ap.parse_args()
+
+    if not args.file and not args.text:
+        raise SystemExit('Provide --file or --text')
+
+    dialogue_out = Path(args.dialogue_out) if args.dialogue_out else ROOT / 'tmp' / 'podcast-make-dialogue.txt'
+    dialogue_out.parent.mkdir(parents=True, exist_ok=True)
+
+    script_cmd = [str(SCRIPT), '-o', str(dialogue_out)]
+    if args.file:
+        script_cmd += ['--file', args.file]
+    else:
+        script_cmd += ['--text', args.text]
+    run(script_cmd)
+
+    audio_cmd = [
+        str(DIALOGUE), '--file', str(dialogue_out), '-o', args.output,
+        '--speaker-a', args.speaker_a, '--speaker-b', args.speaker_b,
+        '--volume-a', str(args.volume_a), '--volume-b', str(args.volume_b),
+    ]
+    run(audio_cmd)
+    print(json.dumps({
+        'ok': True,
+        'dialogue': str(dialogue_out),
+        'audio': str(args.output),
+        'speaker_a': args.speaker_a,
+        'speaker_b': args.speaker_b,
+        'volume_a': args.volume_a,
+        'volume_b': args.volume_b,
+    }, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()
