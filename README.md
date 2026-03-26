@@ -1,0 +1,28 @@
+# podcast-workflow
+
+从内容输入到 TTS 到 podcast feed 的工作流项目。
+
+## 目标
+
+逐步做成一条可复用流水线：
+
+1. 输入内容（长文 / 链接 / PDF / 新闻）
+2. 整理成适合口播的播客稿
+3. 调用中文 TTS（当前优先豆包语音合成 2.0）
+4. 输出音频文件
+5. 生成 / 更新 RSS feed
+6. 发布到 GitHub Pages 或后续更私有的托管
+
+## 当前状态
+
+- GitHub Pages feed 原型已存在于 `../private-podcast`
+- 已验证豆包语音合成 2.0 的可用调用方式
+- 凭证存储方案：macOS Keychain
+
+## 后续建议目录
+
+- `bin/`：CLI 脚本
+- `docs/`：接口说明、工作流设计
+- `episodes/`：生成的音频
+- `feeds/`：RSS 模板 / 输出
+- `tmp/`：中间文件

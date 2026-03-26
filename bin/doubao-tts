@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+SERVICE = 'openclaw.volcengine.tts.apikey'
+ACCOUNT = 'Evan'
+ENDPOINT = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'
+RESOURCE_ID = 'seed-tts-2.0'
+
+
+def get_api_key():
+    env = os.getenv('VOLCENGINE_TTS_API_KEY')
+    if env:
+        return env.strip()
+    cmd = ['security', 'find-generic-password', '-s', SERVICE, '-a', ACCOUNT, '-w']
+    try:
+        out = subprocess.check_output(cmd, text=True).strip()
+        if out:
+            return out
+    except subprocess.CalledProcessError:
+        pass
+    raise SystemExit('API key not found in env or Keychain')
+
+
+def synthesize(text: str, speaker: str, output: Path, sample_rate: int = 24000, uid: str = 'evan-podcast'):
+    api_key = get_api_key()
+    payload = {
+        'user': {'uid': uid},
+        'req_params': {
+            'text': text,
+            'speaker': speaker,
+            'audio_params': {
+                'format': 'mp3',
+                'sample_rate': sample_rate,
+            },
+        },
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    req = Request(ENDPOINT, data=data, method='POST')
+    req.add_header('x-api-key', api_key)
+    req.add_header('X-Api-Resource-Id', RESOURCE_ID)
+    req.add_header('Content-Type', 'application/json')
+
+    with urlopen(req) as resp:
+        raw = resp.read().decode('utf-8', errors='ignore')
+
+    chunks = re.findall(r'\{"code":0,"message":"","data":"([A-Za-z0-9+/=]+)"\}', raw)
+    if not chunks:
+        if raw[:500]:
+            raise SystemExit(f'No audio chunks found. Response starts with: {raw[:500]}')
+        raise SystemExit('No audio chunks found in response')
+
+    audio = b''.join(base64.b64decode(c) for c in chunks)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(audio)
+    return len(chunks), len(audio)
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Doubao TTS 2.0 helper')
+    ap.add_argument('text', nargs='?', help='Text to synthesize')
+    ap.add_argument('-f', '--file', help='Read text from file')
+    ap.add_argument('-s', '--speaker', required=True, help='Speaker ID')
+    ap.add_argument('-o', '--output', required=True, help='Output mp3 path')
+    ap.add_argument('--sample-rate', type=int, default=24000)
+    ap.add_argument('--uid', default='evan-podcast')
+    args = ap.parse_args()
+
+    text = args.text
+    if args.file:
+        text = Path(args.file).read_text(encoding='utf-8')
+    if not text:
+        raise SystemExit('Provide text or --file')
+
+    chunks, size = synthesize(text=text, speaker=args.speaker, output=Path(args.output), sample_rate=args.sample_rate, uid=args.uid)
+    print(json.dumps({'ok': True, 'output': str(args.output), 'chunks': chunks, 'bytes': size}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()
