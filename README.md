@@ -93,3 +93,10 @@ B|...
 ```bash
 ./bin/podcast-make --file article.txt -o episode.mp3
 ```
+
+
+## 一键发布到播客 feed
+
+```bash
+./bin/podcast-publish --file article.txt --slug 2026-03-26-episode-001 --title "案例 001：标题" --summary "这一期的简短介绍"
+```

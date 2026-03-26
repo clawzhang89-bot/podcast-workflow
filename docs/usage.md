@@ -77,3 +77,22 @@ security find-generic-password -s openclaw.volcengine.tts.apikey -a Evan -w
 - 不新增原文没有的信息
 - 不改变判断方向、因果关系和语义强弱
 - 只优化语气、衔接和文本编排
+
+
+## 一键生成并发布到 GitHub Pages 播客 feed
+
+```bash
+./bin/podcast-publish \
+  --file article.txt \
+  --slug 2026-03-26-episode-001 \
+  --title "案例 001：标题" \
+  --summary "这一期的简短介绍"
+```
+
+这条命令会自动完成：
+
+1. 纯文本 → 双人对话稿
+2. 双人对话稿 → 双人 mp3
+3. 复制音频到 `../private-podcast/episodes/`
+4. 更新 `../private-podcast/feed.xml`
+5. git commit + push 到 GitHub Pages 仓库

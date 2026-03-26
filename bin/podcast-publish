@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+import argparse
+import datetime as dt
+import os
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+MAKE = ROOT / 'bin' / 'podcast-make'
+DEFAULT_FEED_REPO = ROOT.parent / 'private-podcast'
+PAGES_BASE = 'https://clawzhang89-bot.github.io/private-podcast'
+
+NS_ITUNES = 'http://www.itunes.com/dtds/podcast-1.0.dtd'
+NS_CONTENT = 'http://purl.org/rss/1.0/modules/content/'
+NS_ATOM = 'http://www.w3.org/2005/Atom'
+ET.register_namespace('itunes', NS_ITUNES)
+ET.register_namespace('content', NS_CONTENT)
+ET.register_namespace('atom', NS_ATOM)
+
+
+def run(cmd, cwd=None):
+    subprocess.run(cmd, cwd=cwd, check=True)
+
+
+def indent(elem, level=0):
+    i = '\n' + level * '  '
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = i + '  '
+        for child in elem:
+            indent(child, level + 1)
+        if not child.tail or not child.tail.strip():
+            child.tail = i
+    if level and (not elem.tail or not elem.tail.strip()):
+        elem.tail = i
+
+
+def add_text(parent, tag, text, attrib=None):
+    el = ET.SubElement(parent, tag, attrib or {})
+    el.text = text
+    return el
+
+
+def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_size: int, pub_date: str):
+    tree = ET.parse(feed_path)
+    root = tree.getroot()
+    channel = root.find('channel')
+    if channel is None:
+        raise SystemExit('Invalid feed.xml: missing channel')
+
+    lbd = channel.find('lastBuildDate')
+    if lbd is None:
+        lbd = ET.SubElement(channel, 'lastBuildDate')
+    lbd.text = pub_date
+
+    # remove old item with same guid
+    for item in list(channel.findall('item')):
+        guid = item.find('guid')
+        if guid is not None and guid.text == slug:
+            channel.remove(item)
+
+    item = ET.Element('item')
+    add_text(item, 'title', title)
+    add_text(item, 'link', f'{PAGES_BASE}/episodes/{slug}.mp3')
+    add_text(item, 'description', summary)
+    add_text(item, f'{{{NS_CONTENT}}}encoded', summary)
+    add_text(item, f'{{{NS_ITUNES}}}author', 'Evan')
+    add_text(item, f'{{{NS_ITUNES}}}summary', summary)
+    ET.SubElement(item, f'{{{NS_ITUNES}}}image', {'href': f'{PAGES_BASE}/site/cover.jpg'})
+    add_text(item, f'{{{NS_ITUNES}}}episodeType', 'full')
+    add_text(item, f'{{{NS_ITUNES}}}explicit', 'false')
+    add_text(item, 'pubDate', pub_date)
+    add_text(item, 'guid', slug, {'isPermaLink': 'false'})
+    ET.SubElement(item, 'enclosure', {
+        'url': f'{PAGES_BASE}/episodes/{slug}.mp3',
+        'length': str(mp3_size),
+        'type': 'audio/mpeg',
+    })
+
+    items = channel.findall('item')
+    insert_at = list(channel).index(items[0]) if items else len(list(channel))
+    channel.insert(insert_at, item)
+    indent(root)
+    tree.write(feed_path, encoding='utf-8', xml_declaration=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Generate podcast audio and publish it into the private-podcast feed')
+    ap.add_argument('--file', help='Input text file')
+    ap.add_argument('--text', help='Direct text input')
+    ap.add_argument('--slug', required=True, help='Episode slug, used for mp3 filename and guid')
+    ap.add_argument('--title', required=True, help='Episode title')
+    ap.add_argument('--summary', required=True, help='Episode summary/description for RSS')
+    ap.add_argument('--feed-repo', default=str(DEFAULT_FEED_REPO), help='Path to private-podcast repo')
+    ap.add_argument('--dialogue-out', help='Optional dialogue text output path')
+    ap.add_argument('--speaker-a', default='zh_female_mizai_uranus_bigtts')
+    ap.add_argument('--speaker-b', default='zh_male_dayi_uranus_bigtts')
+    ap.add_argument('--volume-a', type=int, default=100)
+    ap.add_argument('--volume-b', type=int, default=85)
+    args = ap.parse_args()
+
+    if not args.file and not args.text:
+        raise SystemExit('Provide --file or --text')
+
+    slug = args.slug.strip()
+    feed_repo = Path(args.feed_repo).resolve()
+    episodes_dir = feed_repo / 'episodes'
+    mp3_path = episodes_dir / f'{slug}.mp3'
+    dialogue_out = Path(args.dialogue_out) if args.dialogue_out else ROOT / 'tmp' / f'{slug}.dialogue.txt'
+    episodes_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        str(MAKE), '-o', str(mp3_path), '--dialogue-out', str(dialogue_out),
+        '--speaker-a', args.speaker_a, '--speaker-b', args.speaker_b,
+        '--volume-a', str(args.volume_a), '--volume-b', str(args.volume_b),
+    ]
+    if args.file:
+        cmd += ['--file', args.file]
+    else:
+        cmd += ['--text', args.text]
+    run(cmd)
+
+    size = mp3_path.stat().st_size
+    pub_date = dt.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+    update_feed(feed_repo / 'feed.xml', slug=slug, title=args.title, summary=args.summary, mp3_size=size, pub_date=pub_date)
+
+    run(['git', 'add', 'feed.xml', str(mp3_path.relative_to(feed_repo))], cwd=feed_repo)
+    if (feed_repo / 'site' / 'cover.jpg').exists():
+        run(['git', 'add', 'site/cover.jpg'], cwd=feed_repo)
+    diff = subprocess.run(['git', 'diff', '--cached', '--quiet'], cwd=feed_repo)
+    if diff.returncode != 0:
+        run(['git', 'commit', '-m', f'publish episode {slug}'], cwd=feed_repo)
+        run(['git', 'push'], cwd=feed_repo)
+
+    print(f'{PAGES_BASE}/feed.xml')
+    print(f'{PAGES_BASE}/episodes/{slug}.mp3')
+
+
+if __name__ == '__main__':
+    main()
