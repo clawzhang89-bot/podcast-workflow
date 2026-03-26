@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+import argparse
+import re
+from pathlib import Path
+
+
+def clean_text(text: str) -> str:
+    text = text.replace('\r', '\n')
+    text = re.sub(r'\n+', '\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    return text.strip()
+
+
+def split_sentences(text: str):
+    parts = re.split(r'(?<=[。！？!?])\s*', text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def pair_sentences(sentences, max_chars=46):
+    out = []
+    buf = ''
+    for s in sentences:
+        s = s.strip()
+        if not buf:
+            buf = s
+        elif len(buf) + len(s) <= max_chars:
+            buf += s
+        else:
+            out.append(buf)
+            buf = s
+    if buf:
+        out.append(buf)
+    return out
+
+
+def to_dialogue(text: str):
+    sentences = split_sentences(clean_text(text))
+    chunks = pair_sentences(sentences)
+    lines = []
+    role = 'A'
+    for i, chunk in enumerate(chunks):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if role == 'A':
+            if i == 0:
+                line = f'先抓一下重点。{chunk}'
+            else:
+                line = chunk
+            lines.append(f'A|{line}')
+            role = 'B'
+        else:
+            prefix = '换句话说，' if not chunk.startswith(('所以', '但', '这也意味着', '如果')) else ''
+            lines.append(f'B|{prefix}{chunk}')
+            role = 'A'
+    return '\n'.join(lines) + '\n'
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Convert plain Chinese text into A| / B| dialogue draft')
+    ap.add_argument('--file', help='Input text file')
+    ap.add_argument('--text', help='Direct text input')
+    ap.add_argument('-o', '--output', required=True, help='Output dialogue file')
+    args = ap.parse_args()
+
+    text = args.text
+    if args.file:
+        text = Path(args.file).read_text(encoding='utf-8')
+    if not text:
+        raise SystemExit('Provide --file or --text')
+
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(to_dialogue(text), encoding='utf-8')
+    print(out)
+
+
+if __name__ == '__main__':
+    main()

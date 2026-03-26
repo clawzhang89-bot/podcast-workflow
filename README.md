@@ -47,3 +47,20 @@
 - A: `zh_female_mizai_uranus_bigtts`
 - B: `zh_male_dayi_uranus_bigtts`
 - volume: A=100, B=85
+
+## 纯文本转双人对话稿
+
+```bash
+./bin/podcast-script --file article.txt -o dialogue.txt
+```
+
+输出格式为：
+
+```text
+A|...
+B|...
+A|...
+B|...
+```
+
+说明：当前先做纯文本输入，不负责网页/PDF/搜索入口。
