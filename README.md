@@ -63,4 +63,12 @@ A|...
 B|...
 ```
 
-说明：当前先做纯文本输入，不负责网页/PDF/搜索入口。
+说明：当前先做纯文本输入，不负责网页/PDF/搜索入口。该脚本现在默认走大模型改写，而不是规则拼句。该脚本现在默认走大模型改写，而不是规则拼句。
+
+
+## `podcast-script` 模型调用
+
+`podcast-script` 现在默认通过 `OPENAI_API_KEY` 调模型，把纯文本改写成双人对话稿。可选环境变量：
+
+- `OPENAI_API_URL`
+- `OPENAI_MODEL` 或 `PODCAST_SCRIPT_MODEL`

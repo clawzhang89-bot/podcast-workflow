@@ -1,28 +1,41 @@
 #!/usr/bin/env python3
 import argparse
+import json
+import os
 import re
+import sys
 from pathlib import Path
+from urllib.request import Request, urlopen
 
-OPENERS_A = [
-    '今天这段内容，先抓主线。',
-    '我们先把这段内容拆开看。',
-    '这段信息里，最重要的是主线变化。',
-]
-FOLLOW_B = [
-    '这里面更值得留意的是，',
-    '如果往下拆，核心其实是，',
-    '换个更直接的说法，',
-]
-TRANSITION_A = [
-    '再往下看，',
-    '下一层更关键的是，',
-    '如果把这件事接着推，',
-]
-CLOSE_B = [
-    '所以最后落到判断上，',
-    '所以真正需要记住的是，',
-    '所以从决策角度看，',
-]
+OPENAI_API_URL = os.getenv('OPENAI_API_URL', 'https://api.openai.com/v1/chat/completions')
+OPENAI_MODEL = os.getenv('PODCAST_SCRIPT_MODEL', os.getenv('OPENAI_MODEL', 'gpt-5.4'))
+
+SYSTEM_PROMPT = '''你是中文播客编剧。你的任务是把输入的中文纯文本，改写成适合双人中文播客口播的对话稿。
+
+硬性要求：
+1. 只输出多行纯文本，不要 Markdown，不要解释，不要标题。
+2. 每一行必须严格使用 `A|内容` 或 `B|内容` 格式。
+3. A 负责控场、推进结构、提炼主线；B 负责补充、解释、追问、把抽象内容讲白。
+4. 不要客服腔，不要互相吹捧，不要“欢迎收听”式废话，不要过度戏剧化。
+5. 要像真正的中文播客主持人对谈，口语化，但信息密度高。
+6. 每轮 1 到 2 句，尽量适合 TTS，不要一句特别长。
+7. 保留原文核心信息，不要编造事实。
+8. 轮次默认 6 到 12 轮，视内容长短决定。
+9. 避免机械重复固定句式；不要每轮都用同一种连接词。
+10. 不要输出任何不是 A| 或 B| 开头的行。
+'''
+
+USER_TEMPLATE = '''请把下面这段内容改写成双人播客对话稿。
+
+额外风格要求：
+- 默认偏中文财经/研究类节目风格，但不要太书面。
+- 如果原文有“第一、第二、第三”这种结构，改写时尽量更口语化。
+- B 的作用不是重复 A，而是补充说明、解释含义、接话推进。
+- 让整段听起来像两个人真的在聊同一件事，而不是两个人轮流播报。
+
+原文如下：
+{text}
+'''
 
 
 def clean_text(text: str) -> str:
@@ -32,63 +45,40 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def split_sentences(text: str):
-    parts = re.split(r'(?<=[。！？!?])\s*', text)
-    return [p.strip() for p in parts if p.strip()]
-
-
-def pair_sentences(sentences, max_chars=54):
-    out = []
-    buf = ''
-    for s in sentences:
-        s = s.strip()
-        if not buf:
-            buf = s
-        elif len(buf) + len(s) <= max_chars:
-            buf += s
-        else:
-            out.append(buf)
-            buf = s
-    if buf:
-        out.append(buf)
-    return out
-
-
-def strip_lead(chunk: str) -> str:
-    return re.sub(r'^(第一|第二|第三|另外|此外|同时|最后)[，、:]?', '', chunk).strip()
-
-
-def style_line(role: str, idx: int, total: int, chunk: str) -> str:
-    chunk = strip_lead(chunk)
-    if role == 'A':
-        if idx == 0:
-            return OPENERS_A[0] + chunk
-        if idx >= total - 2:
-            return TRANSITION_A[1] + chunk
-        return TRANSITION_A[idx % len(TRANSITION_A)] + chunk
-    else:
-        if idx >= total - 1:
-            return CLOSE_B[0] + chunk
-        return FOLLOW_B[idx % len(FOLLOW_B)] + chunk
-
-
-def to_dialogue(text: str):
-    sentences = split_sentences(clean_text(text))
-    chunks = pair_sentences(sentences)
-    lines = []
-    role = 'A'
-    for i, chunk in enumerate(chunks):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        line = style_line(role, i, len(chunks), chunk)
-        lines.append(f'{role}|{line}')
-        role = 'B' if role == 'A' else 'A'
+def validate_dialogue(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        raise SystemExit('Model returned empty output')
+    bad = [line for line in lines if not (line.startswith('A|') or line.startswith('B|'))]
+    if bad:
+        raise SystemExit('Model output invalid; found non A|/B| lines: ' + bad[0][:120])
     return '\n'.join(lines) + '\n'
 
 
+def generate_dialogue(text: str) -> str:
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        raise SystemExit('OPENAI_API_KEY is not set')
+    payload = {
+        'model': OPENAI_MODEL,
+        'messages': [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': USER_TEMPLATE.format(text=text)},
+        ],
+        'temperature': 0.7,
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    req = Request(OPENAI_API_URL, data=data, method='POST')
+    req.add_header('Authorization', f'Bearer {api_key}')
+    req.add_header('Content-Type', 'application/json')
+    with urlopen(req) as resp:
+        obj = json.loads(resp.read().decode('utf-8'))
+    content = obj['choices'][0]['message']['content']
+    return validate_dialogue(content)
+
+
 def main():
-    ap = argparse.ArgumentParser(description='Convert plain Chinese text into A| / B| dialogue draft')
+    ap = argparse.ArgumentParser(description='Convert plain Chinese text into A| / B| dialogue draft with an LLM')
     ap.add_argument('--file', help='Input text file')
     ap.add_argument('--text', help='Direct text input')
     ap.add_argument('-o', '--output', required=True, help='Output dialogue file')
@@ -102,7 +92,8 @@ def main():
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(to_dialogue(text), encoding='utf-8')
+    result = generate_dialogue(clean_text(text))
+    out.write_text(result, encoding='utf-8')
     print(out)
 
 
