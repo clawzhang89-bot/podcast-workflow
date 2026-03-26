@@ -83,3 +83,13 @@ B|...
 
 1. `podcast-script`：纯文本 → 双人对话稿
 2. `doubao-dialogue`：双人对话稿 → 双人 mp3
+
+## 怎么调用
+
+优先看：`docs/usage.md`
+
+最常用的一条命令：
+
+```bash
+./bin/podcast-make --file article.txt -o episode.mp3
+```
