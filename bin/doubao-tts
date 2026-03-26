@@ -30,7 +30,7 @@ def get_api_key():
     raise SystemExit('API key not found in env or Keychain')
 
 
-def synthesize(text: str, speaker: str, output: Path, sample_rate: int = 24000, uid: str = 'evan-podcast'):
+def synthesize(text: str, speaker: str, output: Path, sample_rate: int = 24000, volume: int = 100, uid: str = 'evan-podcast'):
     api_key = get_api_key()
     payload = {
         'user': {'uid': uid},
@@ -40,6 +40,7 @@ def synthesize(text: str, speaker: str, output: Path, sample_rate: int = 24000, 
             'audio_params': {
                 'format': 'mp3',
                 'sample_rate': sample_rate,
+                'volume': volume,
             },
         },
     }
@@ -71,6 +72,7 @@ def main():
     ap.add_argument('-s', '--speaker', required=True, help='Speaker ID')
     ap.add_argument('-o', '--output', required=True, help='Output mp3 path')
     ap.add_argument('--sample-rate', type=int, default=24000)
+    ap.add_argument('--volume', type=int, default=100)
     ap.add_argument('--uid', default='evan-podcast')
     args = ap.parse_args()
 
@@ -80,7 +82,7 @@ def main():
     if not text:
         raise SystemExit('Provide text or --file')
 
-    chunks, size = synthesize(text=text, speaker=args.speaker, output=Path(args.output), sample_rate=args.sample_rate, uid=args.uid)
+    chunks, size = synthesize(text=text, speaker=args.speaker, output=Path(args.output), sample_rate=args.sample_rate, volume=args.volume, uid=args.uid)
     print(json.dumps({'ok': True, 'output': str(args.output), 'chunks': chunks, 'bytes': size}, ensure_ascii=False))
 
 

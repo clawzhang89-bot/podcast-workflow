@@ -36,3 +36,14 @@
   - volume: A=100, B=85
 - 示例输入文件：`examples_dialogue.txt`
 - 已生成样片：`episodes/dialogue-demo-dayi.mp3`
+
+## 一键双人生成
+
+```bash
+./bin/doubao-dialogue --file examples_dialogue.txt -o episodes/dialogue-demo-cli.mp3
+```
+
+默认配置：
+- A: `zh_female_mizai_uranus_bigtts`
+- B: `zh_male_dayi_uranus_bigtts`
+- volume: A=100, B=85
