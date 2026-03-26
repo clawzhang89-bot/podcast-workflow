@@ -3,6 +3,27 @@ import argparse
 import re
 from pathlib import Path
 
+OPENERS_A = [
+    '今天这段内容，先抓主线。',
+    '我们先把这段内容拆开看。',
+    '这段信息里，最重要的是主线变化。',
+]
+FOLLOW_B = [
+    '这里面更值得留意的是，',
+    '如果往下拆，核心其实是，',
+    '换个更直接的说法，',
+]
+TRANSITION_A = [
+    '再往下看，',
+    '下一层更关键的是，',
+    '如果把这件事接着推，',
+]
+CLOSE_B = [
+    '所以最后落到判断上，',
+    '所以真正需要记住的是，',
+    '所以从决策角度看，',
+]
+
 
 def clean_text(text: str) -> str:
     text = text.replace('\r', '\n')
@@ -16,7 +37,7 @@ def split_sentences(text: str):
     return [p.strip() for p in parts if p.strip()]
 
 
-def pair_sentences(sentences, max_chars=46):
+def pair_sentences(sentences, max_chars=54):
     out = []
     buf = ''
     for s in sentences:
@@ -33,6 +54,24 @@ def pair_sentences(sentences, max_chars=46):
     return out
 
 
+def strip_lead(chunk: str) -> str:
+    return re.sub(r'^(第一|第二|第三|另外|此外|同时|最后)[，、:]?', '', chunk).strip()
+
+
+def style_line(role: str, idx: int, total: int, chunk: str) -> str:
+    chunk = strip_lead(chunk)
+    if role == 'A':
+        if idx == 0:
+            return OPENERS_A[0] + chunk
+        if idx >= total - 2:
+            return TRANSITION_A[1] + chunk
+        return TRANSITION_A[idx % len(TRANSITION_A)] + chunk
+    else:
+        if idx >= total - 1:
+            return CLOSE_B[0] + chunk
+        return FOLLOW_B[idx % len(FOLLOW_B)] + chunk
+
+
 def to_dialogue(text: str):
     sentences = split_sentences(clean_text(text))
     chunks = pair_sentences(sentences)
@@ -42,17 +81,9 @@ def to_dialogue(text: str):
         chunk = chunk.strip()
         if not chunk:
             continue
-        if role == 'A':
-            if i == 0:
-                line = f'先抓一下重点。{chunk}'
-            else:
-                line = chunk
-            lines.append(f'A|{line}')
-            role = 'B'
-        else:
-            prefix = '换句话说，' if not chunk.startswith(('所以', '但', '这也意味着', '如果')) else ''
-            lines.append(f'B|{prefix}{chunk}')
-            role = 'A'
+        line = style_line(role, i, len(chunks), chunk)
+        lines.append(f'{role}|{line}')
+        role = 'B' if role == 'A' else 'A'
     return '\n'.join(lines) + '\n'
 
 
