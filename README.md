@@ -26,3 +26,13 @@
 - `episodes/`：生成的音频
 - `feeds/`：RSS 模板 / 输出
 - `tmp/`：中间文件
+
+## 已验证双人案例
+
+- 输入格式：`A|...` / `B|...`
+- 当前成功配置：
+  - A: `zh_female_mizai_uranus_bigtts`
+  - B: `zh_male_dayi_uranus_bigtts`
+  - volume: A=100, B=85
+- 示例输入文件：`examples_dialogue.txt`
+- 已生成样片：`episodes/dialogue-demo-dayi.mp3`
