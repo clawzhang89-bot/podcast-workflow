@@ -69,3 +69,11 @@ security find-generic-password -s openclaw.volcengine.tts.apikey -a Evan -w
 
 - `--turns`：目标轮数
 - `--max-chars`：单句目标长度，便于 TTS 口播
+
+
+## `podcast-script` 事实保真原则
+
+- 忠于原文事实
+- 不新增原文没有的信息
+- 不改变判断方向、因果关系和语义强弱
+- 只优化语气、衔接和文本编排
