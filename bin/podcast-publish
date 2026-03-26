@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import json
 import os
 import shutil
 import subprocess
@@ -43,7 +44,16 @@ def add_text(parent, tag, text, attrib=None):
     return el
 
 
-def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_size: int, pub_date: str):
+def probe_duration(mp3_path: Path) -> str:
+    out = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', str(mp3_path)], text=True).strip()
+    seconds = int(round(float(out)))
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f'{h:02d}:{m:02d}:{s:02d}' if h else f'{m:02d}:{s:02d}'
+
+
+def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_size: int, pub_date: str, duration: str):
     tree = ET.parse(feed_path)
     root = tree.getroot()
     channel = root.find('channel')
@@ -69,6 +79,7 @@ def update_feed(feed_path: Path, *, slug: str, title: str, summary: str, mp3_siz
     add_text(item, f'{{{NS_ITUNES}}}author', 'Evan')
     add_text(item, f'{{{NS_ITUNES}}}summary', summary)
     ET.SubElement(item, f'{{{NS_ITUNES}}}image', {'href': f'{PAGES_BASE}/site/cover.jpg'})
+    add_text(item, f'{{{NS_ITUNES}}}duration', duration)
     add_text(item, f'{{{NS_ITUNES}}}episodeType', 'full')
     add_text(item, f'{{{NS_ITUNES}}}explicit', 'false')
     add_text(item, 'pubDate', pub_date)
@@ -123,8 +134,9 @@ def main():
     run(cmd)
 
     size = mp3_path.stat().st_size
-    pub_date = dt.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
-    update_feed(feed_repo / 'feed.xml', slug=slug, title=args.title, summary=args.summary, mp3_size=size, pub_date=pub_date)
+    pub_date = dt.datetime.now(dt.UTC).strftime('%a, %d %b %Y %H:%M:%S GMT')
+    duration = probe_duration(mp3_path)
+    update_feed(feed_repo / 'feed.xml', slug=slug, title=args.title, summary=args.summary, mp3_size=size, pub_date=pub_date, duration=duration)
 
     run(['git', 'add', 'feed.xml', str(mp3_path.relative_to(feed_repo))], cwd=feed_repo)
     if (feed_repo / 'site' / 'cover.jpg').exists():
